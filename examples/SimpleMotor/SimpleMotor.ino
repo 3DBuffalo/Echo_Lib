@@ -1,6 +1,6 @@
 #include <EchoLib.h>
 
-MotorControllers motorsControllers;
+MotorControllers motorControllers;
 
 void setup() {
   Serial.begin(115200);
