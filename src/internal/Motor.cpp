@@ -42,6 +42,11 @@ Motor::Motor(mcpwm_unit_t unit, mcpwm_timer_t timer, int id, int pin1, int pin2)
     .counter_mode = MCPWM_UP_COUNTER
   };
   mcpwm_init(unit, timer, &pwm_config);
+
+  mcpwm_start(unit,timer);
+
+  mcpwm_set_duty_type(unit,timer,MCPWM_OPR_A,MCPWM_DUTY_MODE_0);
+  mcpwm_set_duty_type(unit,timer,MCPWM_OPR_B,MCPWM_DUTY_MODE_0);
 }
 
 void Motor::setSpeed(int16_t dutyCycle) {
@@ -52,18 +57,19 @@ void Motor::setSpeed(int16_t dutyCycle) {
 
 void Motor::applySpeed(int16_t dutyCycle) {
   if (reversed) dutyCycle = -dutyCycle;
-
   float dutyPercent = abs(dutyCycle) / 10.0f;
 
   if (dutyCycle == 0) {
-    mcpwm_set_duty(mcpwm_unit, timer, MCPWM_OPR_A, 0.0f);
-    mcpwm_set_duty(mcpwm_unit, timer, MCPWM_OPR_B, 0.0f);
+    mcpwm_set_signal_low(mcpwm_unit, timer, MCPWM_OPR_A);
+    mcpwm_set_signal_low(mcpwm_unit, timer, MCPWM_OPR_B);
   } else if (dutyCycle > 0) {
     mcpwm_set_duty(mcpwm_unit, timer, MCPWM_OPR_A, dutyPercent);
-    mcpwm_set_duty(mcpwm_unit, timer, MCPWM_OPR_B, 0.0f);
+    mcpwm_set_duty_type(mcpwm_unit,timer,MCPWM_OPR_A,MCPWM_DUTY_MODE_0);
+    mcpwm_set_signal_low(mcpwm_unit, timer, MCPWM_OPR_B);
   } else {
     mcpwm_set_duty(mcpwm_unit, timer, MCPWM_OPR_B, dutyPercent);
-    mcpwm_set_duty(mcpwm_unit, timer, MCPWM_OPR_A, 0.0f);
+    mcpwm_set_duty_type(mcpwm_unit,timer,MCPWM_OPR_B,MCPWM_DUTY_MODE_0);
+    mcpwm_set_signal_low(mcpwm_unit, timer, MCPWM_OPR_A);
   }
 }
 
