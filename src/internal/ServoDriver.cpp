@@ -27,7 +27,7 @@ int ServoDriver::angleToPulseLength(int angle) {
     return SERVOMIN + (angle / 180.0) * (SERVOMAX - SERVOMIN);
 }
 
-void ServoDriver::setServoAngle(int servo, int angle) {
+void ServoDriver::setAngle(int servo, int angle) {
     if (servo < 0 || servo > 9) {
         Serial.println("Invalid servo channel");
         return;
@@ -36,7 +36,7 @@ void ServoDriver::setServoAngle(int servo, int angle) {
     driver.setPWM(servo, 0, pulse);
 }
 
-void ServoDriver::setAllZero() {
+void ServoDriver::setZero() {
     for (int i = 0; i < 10; i++) {
         driver.setPWM(i, 0, 0);
     }

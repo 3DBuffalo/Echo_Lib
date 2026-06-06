@@ -1,7 +1,7 @@
 #include <EchoLib.h>
 
 MotorControllers motors;
-TankDriveTrain drive(motors, 1, 2);  // Use motor IDs 1 and 2
+TankDrive drive(motors, 1, 2);  // Use motor IDs 1 and 2
 
 void setup() {
   Serial.begin(115200);

@@ -16,8 +16,8 @@ public:
     ServoDriver(); // Constructor
     void init();   // Initialize with default frequency
     void init(int freq); // Initialize with custom frequency
-    void setServoAngle(int servo, int angle); // Set angle for a specific servo
-    void setAllZero(); // Set all servos to 0
+    void setAngle(int servo, int angle); // Set angle for a specific servo
+    void setZero(); // Set all servos to 0
 };
 
 #endif

@@ -1,12 +1,12 @@
-//TankDriveTrain.h
-#ifndef TANK_DRIVETRAIN_H
-#define TANK_DRIVETRAIN_H
+//TankDrive.h
+#ifndef TANK_DRIVE_H
+#define TANK_DRIVE_H
 
 #include "Motor.h"
 #include "MotorControllers.h"
 
 
-class TankDriveTrain {
+class TankDrive {
   private:
     MotorControllers& controller;
 
@@ -21,7 +21,7 @@ class TankDriveTrain {
 
   public:
     
-    TankDriveTrain(MotorControllers& controller, uint8_t leftLead, uint8_t rightLead,
+    TankDrive(MotorControllers& controller, uint8_t leftLead, uint8_t rightLead,
                    uint8_t* extraLeftIDs = nullptr, uint8_t extraLeftCount = 0,
                    uint8_t* extraRightIDs = nullptr, uint8_t extraRightCount = 0);
 
@@ -33,4 +33,4 @@ class TankDriveTrain {
 
 };
 
-#endif //TANK_DRIVETRAIN_H
+#endif //TANK_DRIVE_H

@@ -1,4 +1,5 @@
-#include "imu.h"
+#include "IMU.h"
+#include <math.h>
 
 // BMI270 Configuration File - Replace with your actual config data
 const uint8_t bmi270_config_file[] = {
@@ -436,12 +437,56 @@ const uint8_t bmi270_config_file[] = {
     0x2e, 0x00, 0xc1
 };
 
+// ============================================================================
+//  Scale factors  --  THESE MUST MATCH THE RANGE REGISTERS IN initBMI270()
+// ============================================================================
+//
+// Gyroscope full-scale range (datasheet reg 0x43, GYR_RANGE):
+//   0x00 = +/-2000 dps -> 16.4  LSB/(deg/s)
+//   0x01 = +/-1000 dps -> 32.8  LSB/(deg/s)
+//   0x02 = +/- 500 dps -> 65.6  LSB/(deg/s)
+//   0x03 = +/- 250 dps -> 131.2 LSB/(deg/s)
+//   0x04 = +/- 125 dps -> 262.4 LSB/(deg/s)
+//
+// We use +/-2000 dps so a fast robot spin can never saturate the sensor.
+// Saturation permanently corrupts the integrated heading, whereas the slightly
+// coarser resolution at this range is negligible next to gyro bias drift.
+// If your motion is always slow, drop to a smaller range for finer resolution
+// -- just change BOTH lines below so the setting and the sensitivity agree.
+#define GYRO_RANGE_SETTING   0x00
+static const float GYRO_SENS = 16.4f;        // LSB per deg/s  (matches 0x00)
+
+// Accelerometer range (datasheet reg 0x41, ACC_RANGE):
+//   0x00 = +/- 2g -> 16384 LSB/g
+//   0x01 = +/- 4g ->  8192 LSB/g
+//   0x02 = +/- 8g ->  4096 LSB/g
+//   0x03 = +/-16g ->  2048 LSB/g
+// +/-2g gives the best resolution for gravity-based tilt sensing.
+#define ACC_RANGE_SETTING    0x00
+static const float ACCEL_SENS = 16384.0f;    // LSB per g  (matches 0x00)
+static const float G_TO_MS2   = 9.80665f;
+
+// Complementary filter: fraction of the estimate that trusts the gyro.
+// Higher = smoother but slower to correct accel; ~0.98 suits a 200 Hz loop.
+static const float COMP_ALPHA = 0.98f;
+
+// Ignore absurd time steps (first call after reset, or a long loop stall)
+// so a single huge dt can't throw the integration.
+static const float MAX_DT = 0.2f;            // seconds
+
+static inline float wrap360(float a) {
+    a = fmodf(a, 360.0f);
+    if (a < 0.0f) a += 360.0f;
+    return a;
+}
+
 IMU::IMU() {
     accel_bias[0] = accel_bias[1] = accel_bias[2] = 0;
-    gyro_bias[0] = gyro_bias[1] = gyro_bias[2] = 0;
+    gyro_bias[0]  = gyro_bias[1]  = gyro_bias[2]  = 0;
     roll = pitch = yaw = 0;
     angleX = angleY = angleZ = 0;
-    last_time = millis();
+    first_update = true;
+    last_time = micros();
 }
 
 void IMU::begin() {
@@ -451,130 +496,131 @@ void IMU::begin() {
     softReset();
     Serial.println("Initializing BMI270...");
     initBMI270();
-    calibrateGyro();
+    delay(50);
+    calibrateGyro();   // sensor must be still here
+    reset();           // zero the angles and re-seed the filter
 }
 
 // ===== Reset =====
 void IMU::reset() {
     roll = pitch = yaw = 0;
     angleX = angleY = angleZ = 0;
-    last_time = millis();
+    first_update = true;
+    last_time = micros();
 }
 
 // ===== Raw Reads =====
-int16_t IMU::getRawAccelX() {
-    return (readRegister(ACC_X_LSB) | (readRegister(ACC_X_LSB+1) << 8));
-}
-int16_t IMU::getRawAccelY() {
-    return (readRegister(ACC_Y_LSB) | (readRegister(ACC_Y_LSB+1) << 8));
-}
-int16_t IMU::getRawAccelZ() {
-    return (readRegister(ACC_Z_LSB) | (readRegister(ACC_Z_LSB+1) << 8));
-}
-int16_t IMU::getRawGyroX() {
-    return (readRegister(GYRO_X_LSB) | (readRegister(GYRO_X_LSB+1) << 8));
-}
-int16_t IMU::getRawGyroY() {
-    return (readRegister(GYRO_Y_LSB) | (readRegister(GYRO_Y_LSB+1) << 8));
-}
-int16_t IMU::getRawGyroZ() {
-    return (readRegister(GYRO_Z_LSB) | (readRegister(GYRO_Z_LSB+1) << 8));
-}
+int16_t IMU::getRawAccelX() { return readRegister16(ACC_X_LSB); }
+int16_t IMU::getRawAccelY() { return readRegister16(ACC_Y_LSB); }
+int16_t IMU::getRawAccelZ() { return readRegister16(ACC_Z_LSB); }
+int16_t IMU::getRawGyroX()  { return readRegister16(GYRO_X_LSB); }
+int16_t IMU::getRawGyroY()  { return readRegister16(GYRO_Y_LSB); }
+int16_t IMU::getRawGyroZ()  { return readRegister16(GYRO_Z_LSB); }
 
-// ===== Scaled Accel =====
-float IMU::getAccelXms() {
-    return (getRawAccelX() / 16384.0f) * 9.80665f - accel_bias[0];
-}
-float IMU::getAccelYms() {
-    return (getRawAccelY() / 16384.0f) * 9.80665f - accel_bias[1];
-}
-float IMU::getAccelZms() {
-    return (getRawAccelZ() / 16384.0f) * 9.80665f - accel_bias[2];
-}
+// ===== Scaled Accel (m/s^2) =====
+float IMU::getAccelXms() { return (getRawAccelX() / ACCEL_SENS) * G_TO_MS2 - accel_bias[0]; }
+float IMU::getAccelYms() { return (getRawAccelY() / ACCEL_SENS) * G_TO_MS2 - accel_bias[1]; }
+float IMU::getAccelZms() { return (getRawAccelZ() / ACCEL_SENS) * G_TO_MS2 - accel_bias[2]; }
 
 // ===== G-Force =====
-float IMU::getForceX() { return getAccelXms() / 9.80665f; }
-float IMU::getForceY() { return getAccelYms() / 9.80665f; }
-float IMU::getForceZ() { return getAccelZms() / 9.80665f; }
+float IMU::getForceX() { return getAccelXms() / G_TO_MS2; }
+float IMU::getForceY() { return getAccelYms() / G_TO_MS2; }
+float IMU::getForceZ() { return getAccelZms() / G_TO_MS2; }
 
-// ===== Gyro Absolute Angles =====
-float IMU::getGyroXdeg() {
-    return angleX;
-}
-float IMU::getGyroYdeg() {
-    return angleY;
-}
-float IMU::getGyroZdeg() {
-    return angleZ;
+// ===== Gyro Absolute Angles (0..360, relative to last reset) =====
+// Each call advances the integration by the elapsed time, so these stay
+// current no matter how often (or seldom) you read them.
+float IMU::getGyroXdeg() { updateAngles(); return angleX; }
+float IMU::getGyroYdeg() { updateAngles(); return angleY; }
+float IMU::getGyroZdeg() { updateAngles(); return angleZ; }
+
+// ===== Core integration + sensor fusion =====
+void IMU::updateAngles() {
+    int16_t raw[6];
+    readAllRaw(raw);   // one coherent accel+gyro sample
+
+    // Accelerometer -> m/s^2 (bias removed)
+    float ax = (raw[0] / ACCEL_SENS) * G_TO_MS2 - accel_bias[0];
+    float ay = (raw[1] / ACCEL_SENS) * G_TO_MS2 - accel_bias[1];
+    float az = (raw[2] / ACCEL_SENS) * G_TO_MS2 - accel_bias[2];
+
+    // Gyroscope -> deg/s (bias removed)  -- correct sensitivity for the range
+    float gx = (raw[3] / GYRO_SENS) - gyro_bias[0];
+    float gy = (raw[4] / GYRO_SENS) - gyro_bias[1];
+    float gz = (raw[5] / GYRO_SENS) - gyro_bias[2];
+
+    unsigned long now = micros();
+    float dt = (now - last_time) / 1000000.0f;   // micros() handles wrap via unsigned math
+    last_time = now;
+    if (dt <= 0.0f || dt > MAX_DT) return;        // skip bad/huge steps
+
+    // Integrate gyro for the relative 0..360 angles
+    angleX = wrap360(angleX + gx * dt);
+    angleY = wrap360(angleY + gy * dt);
+    angleZ = wrap360(angleZ + gz * dt);
+
+    // Absolute tilt reference from gravity (roll & pitch only)
+    float accel_roll  = atan2f(ay, sqrtf(ax * ax + az * az)) * 180.0f / PI;
+    float accel_pitch = atan2f(-ax, sqrtf(ay * ay + az * az)) * 180.0f / PI;
+
+    if (first_update) {
+        // Start exactly on the accelerometer attitude instead of drifting up
+        // from zero on power-up.
+        roll  = accel_roll;
+        pitch = accel_pitch;
+        first_update = false;
+    } else {
+        roll  = COMP_ALPHA * (roll  + gx * dt) + (1.0f - COMP_ALPHA) * accel_roll;
+        pitch = COMP_ALPHA * (pitch + gy * dt) + (1.0f - COMP_ALPHA) * accel_pitch;
+    }
+
+    // No magnetometer -> yaw is relative integrated heading (will slowly drift).
+    yaw = angleZ;
 }
 
 // ===== Orientation Fusion =====
 void IMU::getOrientation(float &out_roll, float &out_pitch, float &out_yaw) {
-    float gx = (getRawGyroX() / 65.5f) - gyro_bias[0];
-    float gy = (getRawGyroY() / 65.5f) - gyro_bias[1];
-    float gz = (getRawGyroZ() / 65.5f) - gyro_bias[2];
-
-    float ax = getAccelXms();
-    float ay = getAccelYms();
-    float az = getAccelZms();
-
-    unsigned long now = millis();
-    float dt = (now - last_time) / 1000.0f;
-    last_time = now;
-
-    // integrate gyro
-    angleX += gx * dt;
-    angleY += gy * dt;
-    angleZ += gz * dt;
-
-    // wrap 0–360
-    if (angleX >= 360) angleX -= 360; if (angleX < 0) angleX += 360;
-    if (angleY >= 360) angleY -= 360; if (angleY < 0) angleY += 360;
-    if (angleZ >= 360) angleZ -= 360; if (angleZ < 0) angleZ += 360;
-
-    // accel angles
-    float accel_roll  = atan2(ay, sqrt(ax*ax + az*az)) * 180.0f / PI;
-    float accel_pitch = atan2(-ax, sqrt(ay*ay + az*az)) * 180.0f / PI;
-
-    // complementary filter
-    const float alpha = 0.96f;
-    roll  = alpha * (roll  + gx * dt) + (1 - alpha) * accel_roll;
-    pitch = alpha * (pitch + gy * dt) + (1 - alpha) * accel_pitch;
-    yaw   = angleZ; // only relative
-
-    out_roll = roll;
+    updateAngles();
+    out_roll  = roll;
     out_pitch = pitch;
-    out_yaw = yaw;
+    out_yaw   = yaw;
 }
 
 // ===== Calibration =====
 void IMU::calibrateAccel() {
-    Serial.println("Calibrating accelerometer...");
-    float sx=0, sy=0, sz=0;
-    for (int i=0;i<100;i++) {
-        sx += getAccelXms();
-        sy += getAccelYms();
-        sz += getAccelZms();
-        delay(10);
+    Serial.println("Calibrating accelerometer (keep level and still)...");
+    const int N = 200;
+    double sx = 0, sy = 0, sz = 0;
+    for (int i = 0; i < N; i++) {
+        // Use RAW so a previously-stored bias can't feed back into the result.
+        sx += (getRawAccelX() / ACCEL_SENS) * G_TO_MS2;
+        sy += (getRawAccelY() / ACCEL_SENS) * G_TO_MS2;
+        sz += (getRawAccelZ() / ACCEL_SENS) * G_TO_MS2;
+        delay(5);
     }
-    accel_bias[0] = sx/100;
-    accel_bias[1] = sy/100;
-    accel_bias[2] = (sz/100) - 9.80665f;
+    accel_bias[0] = (float)(sx / N);              // ~0 when level
+    accel_bias[1] = (float)(sy / N);              // ~0 when level
+    accel_bias[2] = (float)(sz / N) - G_TO_MS2;   // ~g when level
     Serial.println("Accel calibration done.");
 }
 
 void IMU::calibrateGyro() {
-    Serial.println("Calibrating gyroscope...");
-    float sx=0, sy=0, sz=0;
-    for (int i=0;i<100;i++) {
-        sx += (getRawGyroX() / 65.5f);
-        sy += (getRawGyroY() / 65.5f);
-        sz += (getRawGyroZ() / 65.5f);
-        delay(10);
+    Serial.println("Calibrating gyroscope (keep the sensor still)...");
+    const int N = 500;
+    double sx = 0, sy = 0, sz = 0;
+    for (int i = 0; i < N; i++) {
+        sx += getRawGyroX() / GYRO_SENS;
+        sy += getRawGyroY() / GYRO_SENS;
+        sz += getRawGyroZ() / GYRO_SENS;
+        delay(2);
     }
-    gyro_bias[0] = sx/100;
-    gyro_bias[1] = sy/100;
-    gyro_bias[2] = sz/100;
+    gyro_bias[0] = (float)(sx / N);
+    gyro_bias[1] = (float)(sy / N);
+    gyro_bias[2] = (float)(sz / N);
+    Serial.print("Gyro bias (deg/s): ");
+    Serial.print(gyro_bias[0], 4); Serial.print(", ");
+    Serial.print(gyro_bias[1], 4); Serial.print(", ");
+    Serial.println(gyro_bias[2], 4);
     Serial.println("Gyro calibration done.");
 }
 
@@ -583,63 +629,106 @@ uint8_t IMU::readRegister(uint8_t reg) {
     Wire.beginTransmission(BMI270_I2C_ADDR);
     Wire.write(reg);
     Wire.endTransmission(false);
-    Wire.requestFrom(BMI270_I2C_ADDR,(uint8_t)1);
+    Wire.requestFrom(BMI270_I2C_ADDR, (uint8_t)1);
     return Wire.available() ? Wire.read() : 0;
 }
+
+// Read a signed 16-bit little-endian value (LSB first) in a single transaction.
+int16_t IMU::readRegister16(uint8_t reg) {
+    Wire.beginTransmission(BMI270_I2C_ADDR);
+    Wire.write(reg);
+    Wire.endTransmission(false);
+    Wire.requestFrom(BMI270_I2C_ADDR, (uint8_t)2);
+    uint8_t lsb = Wire.available() ? Wire.read() : 0;
+    uint8_t msb = Wire.available() ? Wire.read() : 0;
+    return (int16_t)(((uint16_t)msb << 8) | lsb);
+}
+
+// Burst-read accel(x,y,z) + gyro(x,y,z) from 0x0C..0x17 in one transaction so
+// all six values come from the SAME instant (no cross-axis time skew).
+void IMU::readAllRaw(int16_t out[6]) {
+    Wire.beginTransmission(BMI270_I2C_ADDR);
+    Wire.write(ACC_X_LSB);            // 0x0C
+    Wire.endTransmission(false);
+    Wire.requestFrom(BMI270_I2C_ADDR, (uint8_t)12);
+    uint8_t b[12];
+    for (int i = 0; i < 12; i++) b[i] = Wire.available() ? Wire.read() : 0;
+    for (int i = 0; i < 6; i++)
+        out[i] = (int16_t)(((uint16_t)b[i * 2 + 1] << 8) | b[i * 2]);
+}
+
 void IMU::writeRegister(uint8_t reg, uint8_t value) {
     Wire.beginTransmission(BMI270_I2C_ADDR);
     Wire.write(reg);
     Wire.write(value);
     Wire.endTransmission();
 }
+
 void IMU::softReset() {
     writeRegister(COMMAND_REG, 0xB6);
     delay(15);
 }
+
 float IMU::lowPassFilter(float current, float previous, float alpha) {
-    return alpha * previous + (1-alpha)*current;
+    return alpha * previous + (1 - alpha) * current;
 }
 
-// ===== Init (kept identical to yours) =====
+// ===== Init =====
 void IMU::initBMI270() {
     uint8_t chip_id = readRegister(WHO_AM_I_REG);
     if (chip_id != 0x24) {
-        Serial.println("Error: Failed to find BMI270.");
+        Serial.print("Error: BMI270 not found (CHIP_ID=0x");
+        Serial.print(chip_id, HEX);
+        Serial.println(").");
         return;
     }
     Serial.println("BMI270 detected!");
 
     uint8_t internal_status = readRegister(INTERNAL_STATUS_REG);
-    if (internal_status != 0x01) {
+    if ((internal_status & 0x01) != 0x01) {
         Serial.println("Loading config...");
-        writeRegister(PWR_CONF_REG, 0x00);
+        writeRegister(PWR_CONF_REG, 0x00);    // disable advanced power save
         delayMicroseconds(450);
-        writeRegister(INIT_CTRL_REG, 0x00);
+        writeRegister(INIT_CTRL_REG, 0x00);   // start config load
 
-        for (int i=0; i<256; i++) {
+        for (int i = 0; i < 256; i++) {
             writeRegister(INIT_ADDR_0_REG, 0x00);
             writeRegister(INIT_ADDR_1_REG, i);
-            delay(30);
 
             Wire.beginTransmission(BMI270_I2C_ADDR);
             Wire.write(INIT_DATA_REG);
-            for (int j=0; j<32; j++) {
-                Wire.write(bmi270_config_file[i*32+j]);
-            }
+            for (int j = 0; j < 32; j++)
+                Wire.write(bmi270_config_file[i * 32 + j]);
             Wire.endTransmission();
-            delayMicroseconds(20);
         }
 
-        writeRegister(INIT_CTRL_REG, 0x01);
-        delay(20);
+        writeRegister(INIT_CTRL_REG, 0x01);   // config load complete
+        delay(25);
         internal_status = readRegister(INTERNAL_STATUS_REG);
     }
 
-    writeRegister(PWR_CTRL_REG, 0x0F);
-    delay(100);
-    writeRegister(PWR_CONF_REG, 0x00);
-    delay(100);
-    writeRegister(ACC_RANGE_REG, 0x00);
-    writeRegister(GYRO_RANGE_REG, 0x03);
+    if ((internal_status & 0x01) == 0x01) {
+        Serial.println("BMI270 config OK.");
+    } else {
+        Serial.print("BMI270 config FAILED (INTERNAL_STATUS=0x");
+        Serial.print(internal_status, HEX);
+        Serial.println(").");
+    }
+
+    // Power up accel + gyro + temp; no aux (we have no magnetometer).
+    writeRegister(PWR_CTRL_REG, 0x0E);        // acc_en | gyr_en | temp_en
+    delay(10);
+    writeRegister(PWR_CONF_REG, 0x00);        // keep advanced power save OFF
+    delay(10);
+
+    // Output data rate / bandwidth / high-performance filters.
+    writeRegister(ACC_CONF_REG,  0xA9);       // 200 Hz, normal BW, hi-perf filter
+    writeRegister(GYRO_CONF_REG, 0xE9);       // 200 Hz, normal BW, hi-perf + low-noise
+
+    // Measurement ranges -- MUST match GYRO_SENS / ACCEL_SENS above.
+    writeRegister(ACC_RANGE_REG,  ACC_RANGE_SETTING);
+    writeRegister(GYRO_RANGE_REG, GYRO_RANGE_SETTING);
+    delay(10);
+
     Serial.println("BMI270 init complete.");
 }

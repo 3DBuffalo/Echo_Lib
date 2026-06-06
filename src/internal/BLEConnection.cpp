@@ -95,7 +95,7 @@ void BLEServerWrapper::begin() {
     Serial.println(_bluetoothID);
 }
 
-void BLEServerWrapper::connect() {
+void BLEServerWrapper::advertise() {
     if (!_initialized) {
         begin();
     }

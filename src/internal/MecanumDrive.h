@@ -1,12 +1,12 @@
-// mechanumDriveTrain.h
-#ifndef MECHANUM_DRIVETRAIN_H
-#define MECHANUM_DRIVETRAIN_H
+// mecanumDrive.h
+#ifndef MECANUM_DRIVE_H
+#define MECANUM_DRIVE_H
 
 #include "Motor.h"
 #include "MotorControllers.h"
 #include <cmath>
 
-class MechanumDriveTrain {
+class MecanumDrive {
 private:
     MotorControllers& controller;
     uint8_t frontLeft;
@@ -17,7 +17,7 @@ private:
 
 public:
     // Constructor
-    MechanumDriveTrain(MotorControllers& controller, uint8_t FrontL, uint8_t FrontR, uint8_t BackL, uint8_t BackR);
+    MecanumDrive(MotorControllers& controller, uint8_t FrontL, uint8_t FrontR, uint8_t BackL, uint8_t BackR);
 
     // Drive method
     void drive(int x, int y, int turn);
@@ -27,4 +27,4 @@ public:
     void setCoast();
 };
 
-#endif // MECHANUM_DRIVETRAIN_H
+#endif // MECANUM_DRIVE_H

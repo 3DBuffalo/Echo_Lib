@@ -25,7 +25,7 @@ public:
     ~BLEServerWrapper();
     
     void begin();  // Initialize BLE
-    void connect();
+    void advertise();
     void disconnect();
     bool getStatus() const;
     void autoReconnect(bool enable);

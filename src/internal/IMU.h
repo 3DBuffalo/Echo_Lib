@@ -15,7 +15,9 @@
 #define INIT_ADDR_0_REG      0x5B
 #define INIT_ADDR_1_REG      0x5C
 #define INIT_DATA_REG        0x5E
+#define ACC_CONF_REG         0x40
 #define ACC_RANGE_REG        0x41
+#define GYRO_CONF_REG        0x42
 #define GYRO_RANGE_REG       0x43
 
 // Data registers
@@ -69,9 +71,12 @@ public:
 
 private:
     uint8_t readRegister(uint8_t reg);
+    int16_t readRegister16(uint8_t reg);        // signed 16-bit, 2-byte burst
+    void readAllRaw(int16_t out[6]);            // coherent accel+gyro sample
     void writeRegister(uint8_t reg, uint8_t value);
     void softReset();
     void initBMI270();
+    void updateAngles();                        // integrate + fuse (call often)
 
     // internal helpers
     float lowPassFilter(float current, float previous, float alpha = 0.8f);
@@ -86,6 +91,7 @@ private:
     // integrated absolute gyro angles (0–360 wrap)
     float angleX, angleY, angleZ;
 
+    bool first_update;          // seed the filter from accel on first sample
     unsigned long last_time;
 };
 

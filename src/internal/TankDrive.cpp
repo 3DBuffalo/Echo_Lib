@@ -1,6 +1,6 @@
-#include "TankDriveTrain.h"
+#include "TankDrive.h"
 
-TankDriveTrain::TankDriveTrain(MotorControllers& controller, uint8_t leftLead, uint8_t rightLead,
+TankDrive::TankDrive(MotorControllers& controller, uint8_t leftLead, uint8_t rightLead,
                                uint8_t* extraLeftIDs, uint8_t extraLeftCount,
                                uint8_t* extraRightIDs, uint8_t extraRightCount)
     : controller(controller), leftLead(leftLead), rightLead(rightLead), 
@@ -23,7 +23,7 @@ TankDriveTrain::TankDriveTrain(MotorControllers& controller, uint8_t leftLead, u
     }
 }
 
-void TankDriveTrain::drive(int x, int y){
+void TankDrive::drive(int x, int y){
   //x is left right, y is forward back 
   int left = x + y;
   int right = y - x;
@@ -39,10 +39,10 @@ void TankDriveTrain::drive(int x, int y){
   }
 }
 
-void TankDriveTrain::setBrake(){
+void TankDrive::setBrake(){
   controller.setBrake();
 }
 
-void TankDriveTrain::setCoast(){
+void TankDrive::setCoast(){
   controller.setCoast();
 }

@@ -6,7 +6,7 @@ void setup() {
     servoDriver.init();
     
     // Start in "home" position
-    servoDriver.setAllZero();
+    servoDriver.setZero();
     delay(1000);
     
     Serial.begin(115200);
@@ -15,17 +15,17 @@ void setup() {
 
 void loop() {
     // Move to "grab" position
-    servoDriver.setServoAngle(0, 45);  // Base rotation
-    servoDriver.setServoAngle(1, 90);  // Shoulder
-    servoDriver.setServoAngle(2, 135); // Elbow
+    servoDriver.setAngle(0, 45);  // Base rotation
+    servoDriver.setAngle(1, 90);  // Shoulder
+    servoDriver.setAngle(2, 135); // Elbow
     delay(2000);
     
     // Move to "lift" position
-    servoDriver.setServoAngle(1, 45);  // Lift shoulder
-    servoDriver.setServoAngle(2, 90);  // Straighten elbow
+    servoDriver.setAngle(1, 45);  // Lift shoulder
+    servoDriver.setAngle(2, 90);  // Straighten elbow
     delay(2000);
     
     // Return home
-    servoDriver.setAllZero();
+    servoDriver.setZero();
     delay(2000);
 }

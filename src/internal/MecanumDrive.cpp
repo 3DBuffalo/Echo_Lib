@@ -1,11 +1,11 @@
-// mechanumDriveTrain.cpp
-#include "MechanumDriveTrain.h"
+// mecanumDrive.cpp
+#include "MecanumDrive.h"
 
 // Constructor implementation
-MechanumDriveTrain::MechanumDriveTrain(MotorControllers& controller, uint8_t FrontL, uint8_t FrontR, uint8_t BackL, uint8_t BackR)
+MecanumDrive::MecanumDrive(MotorControllers& controller, uint8_t FrontL, uint8_t FrontR, uint8_t BackL, uint8_t BackR)
     : controller(controller), frontLeft(FrontL), frontRight(FrontR), backLeft(BackL), backRight(BackR), isFieldCentric(false) {}
 
-void MechanumDriveTrain::drive(int x, int y, int turn) {
+void MecanumDrive::drive(int x, int y, int turn) {
   int FL = y + x + turn;
   int FR = y - x - turn;
   int BL = y - x + turn;
@@ -17,14 +17,14 @@ void MechanumDriveTrain::drive(int x, int y, int turn) {
   controller.set(backRight,BR);
 }
 
-void MechanumDriveTrain::setBrake() {
+void MecanumDrive::setBrake() {
   controller.getMotorById(frontLeft)->setBrakeMode();
   controller.getMotorById(frontRight)->setBrakeMode();
   controller.getMotorById(backLeft)->setBrakeMode();
   controller.getMotorById(backRight)->setBrakeMode();
 }
 
-void MechanumDriveTrain::setCoast() {
+void MecanumDrive::setCoast() {
   controller.getMotorById(frontLeft)->setCoastMode();
   controller.getMotorById(frontRight)->setCoastMode();
   controller.getMotorById(backLeft)->setCoastMode();

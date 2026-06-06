@@ -5,7 +5,7 @@ BLEServerWrapper ble("EchoBot");
 void setup() {
   Serial.begin(115200);
   ble.begin();
-  ble.connect();
+  ble.advertise();
 }
 
 void loop() {
