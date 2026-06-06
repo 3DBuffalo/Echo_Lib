@@ -6,7 +6,7 @@
 #include "internal/Adafruit_PWMServoDriver.h"
 #include "internal/BLEConnection.h"
 #include "internal/IMU.h"
-#include "internal/MechanumDrive.h"
+#include "internal/MecanumDrive.h"
 #include "internal/Motor.h"
 #include "internal/MotorControllers.h"
 #include "internal/ServoDriver.h"
