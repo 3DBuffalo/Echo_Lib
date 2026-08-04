@@ -2,7 +2,6 @@
 #define DISTANCE_SENSOR_H
 
 #include <Arduino.h>
-#include <Timer.h>
 
 class DistanceSensor {
 public:
