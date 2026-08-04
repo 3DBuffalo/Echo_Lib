@@ -14,6 +14,8 @@
 #include "internal/WiFiServer.h"
 #include "internal/PIDController.h"
 #include "internal/Timer.h"
+#include "internal/DistanceSensor.h"
+#include "internal/DriverStation.h"
 
 namespace EchoLib {
   // Call once in setup() for initialization
