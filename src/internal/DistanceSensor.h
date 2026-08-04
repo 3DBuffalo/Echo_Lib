@@ -28,7 +28,6 @@ private:
     int _trig;
     int _echo;
     boolean _metric;
-    Timer timer;
     boolean filled;
     int ind = 0;
     int readings[5];
