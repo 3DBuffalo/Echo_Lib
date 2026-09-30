@@ -38,6 +38,6 @@ void ServoDriver::setAngle(int servo, int angle) {
 
 void ServoDriver::setZero() {
     for (int i = 0; i < 10; i++) {
-        setAngle(i, 0, 0);
+        setAngle(i, 0);
     }
 }
